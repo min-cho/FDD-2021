@@ -1,0 +1,139 @@
+rm(list=ls())
+setwd("C:/Users/MR004CHM/Desktop/Rcode") ##저장위치 지정##
+set.seed(777)
+library(ggplot2)
+
+file<-read.csv("data_bias_light.csv",header=T)
+
+### CUMULATIVE FOULING FAULT GENERATION
+### ASSUME the absolute normal distribution instead of Weibull 
+### MAXIMUM EFFICIENCY DROP IS 2%
+
+
+cum_foul         = data.frame(deposit= file$HW_flow_normal)
+cum_foul$thick   <- cumsum(cum_foul$deposit)
+
+max_foul = (2/100)/max(cum_foul$thick)
+cum_foul$fault   <- cum_foul$thick*max_foul
+cum_foul$energy  <- cum_foul$fault*file$GAS_normal
+cum_foul$cost    <- cumsum(cum_foul$energy)/(3.6e+9)*43
+
+#plot(file$HW_flow_normal, pch='.')
+#plot(cum_foul$thick[1:1440], pch='.')
+#plot(cum_foul$thick, pch='.')
+#plot(cum_foul$fault, xlab='Time(min)', ylab='Fouling Fault(%)', pch='.')
+#plot(cum_foul$energy, xlab='Time(min)', ylab='Additioanl Energy(J)', pch='.')
+#plot(cum_foul$cost, pch='.')
+
+
+################################################################
+### SCENARIO 1_ Predictive Maintenance ###
+
+### 5-year history
+### as it is big enough number, first year will be repeated in 5-years
+
+
+history_s1         = data.frame(deposit=rep(cum_foul$deposit,5))
+history_s1$thick   <- cumsum(history_s1$deposit)
+history_s1$fault   <- history_s1$thick*max_foul
+history_s1$energy  <- history_s1$fault*file$GAS_normal
+
+#plot(history_s1$energy, pch='.')
+### 43.3USD per MWh @ industrial LNG (2019 KOSIS) and 1MWH equals 3.6e+9 J
+
+history_s1$cost    <- cumsum(history_s1$energy)/(3.6e+9)*43
+
+history_s1$cost[262800]
+history_s1$cost[262800+525600]
+history_s1$cost[262800+525600*2]
+history_s1$cost[262800+525600*3]
+history_s1$cost[262800+525600*4]
+
+#plot(history_s1$fault, pch='.')
+
+### manual fixing but assume the auto-diagnosis :D
+
+history_s1$thick_fix  <- rep(history_s1$thick[1:1314000])
+history_s1$fault_fix  <- history_s1$thick_fix*max_foul
+history_s1$energy_fix <- history_s1$fault_fix*file$GAS_normal
+history_s1$cost_fix   <- cumsum(history_s1$energy_fix)/(3.6e+9)*43
+
+################################################################
+### SCENARIO 2_ condition-based ###
+
+history_s2        = data.frame(thick=history_s1$thick)
+history_s2$thick  <- c(history_s1$thick[1:1839600],history_s1$thick[1:788400])
+history_s2$faultx <- history_s2$thick*max_foul
+history_s2$energy <- history_s2$fault*file$GAS_normal
+history_s2$cost   <- cumsum(history_s2$energy)/(3.6e+9)*43
+
+
+################################################################
+### SCENARIO 3_ condition-baed causal fix : to half of deposition of scale
+
+#history_s3                          = data.frame(deposit=rep(cum_foul$deposit,5))
+#history_s3$deposit[262801:2628000]  <- history_s1$deposit[262801:2628000]*0.5
+
+history_s3         = data.frame(deposit= history_s1$deposit*0.5)
+history_s3$thick   <- cumsum(history_s3$deposit)
+history_s3$fault   <- history_s3$thick*max_foul
+history_s3$energy  <- history_s3$fault*file$GAS_normal
+history_s3$cost    <- cumsum(history_s3$energy)/(3.6e+9)*43
+
+#plot(history_s3$thick, pch='.')
+
+history_s3$cost[262800]
+history_s3$cost[262800+525600]
+history_s3$cost[262800+525600*2]
+history_s3$cost[262800+525600*3]
+history_s3$cost[262800+525600*4]
+
+#######################################################################################################
+
+#case1: scenairo1
+#case2: scenario2
+#case3: scenario1-fixed
+#case4: scenario3
+
+pldata=as.data.frame(cbind(history_s1$cost,history_s2$cost,history_s1$cost_fix,history_s3$cost,
+                           history_s1$fault,history_s2$fault,history_s1$fault_fix,history_s3$fault))
+pldata$min=c(1:(nrow(pldata)))
+colnames(pldata)=c("cost_case1","cost_case2","cost_case3","cost_case4",
+                   "fouling_case1","fouling_case2","fouling_case3","fouling_case4","min")
+
+ggcolors = c("case1"="red","case2"="blue","case3"="green","case4"="black")
+
+g10<-ggplot(pldata,aes(x=min,y=cost_case1))+
+  theme_classic()+
+  geom_line(aes(y = cost_case1,color="case1"),linetype='solid')+
+  geom_line(aes(y = cost_case2,color="case2"),linetype="dashed")+
+  geom_line(aes(y = cost_case3,color="case3"),linetype="solid")+
+  geom_line(aes(y = cost_case4,color="case4"),linetype="dashed")+
+  labs(x="Time(Year_Month)",y="Energycost($)",color="Legend")+
+  scale_color_manual(values=ggcolors)+
+  theme(legend.title=element_blank(),
+        legend.direction = "vertical", 
+        legend.position = c(0.1,0.8),
+        legend.text=element_text(size=15))+
+  scale_x_continuous(breaks=c(1,seq(from=262800, to=2628000, by=262800)),
+                     labels = c("Y1_01","Y1_06","Y2_01","Y2_06","Y3_01","Y3_06","Y4_01","Y4_06","Y5_01","Y5_06","Y6_01"))
+ 
+  
+g20<-ggplot(pldata,aes(x=min,y=fouling_case1))+
+  theme_classic()+
+  geom_line(aes(y = fouling_case1,color="case1"),linetype='solid')+
+  geom_line(aes(y = fouling_case2,color="case2"),linetype="dashed")+
+  geom_line(aes(y = fouling_case3,color="case3"),linetype="solid")+
+  geom_line(aes(y = fouling_case4,color="case4"),linetype="dashed")+
+  labs(x="Time(Year_Month)",y="Fouling Error(%)",color="Legend")+
+  scale_color_manual(values=ggcolors)+
+  theme(legend.title=element_blank(),
+        legend.direction = "vertical", 
+        legend.position = c(0.1,0.8),
+        legend.text=element_text(size=15))+
+  scale_x_continuous(breaks=c(1,seq(from=262800, to=2628000, by=262800)),
+                     labels = c("Y1_01","Y1_06","Y2_01","Y2_06","Y3_01","Y3_06","Y4_01","Y4_06","Y5_01","Y5_06","Y6_01"))
+
+
+
+
